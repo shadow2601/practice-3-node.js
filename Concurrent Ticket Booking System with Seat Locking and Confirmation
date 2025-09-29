@@ -1,0 +1,69 @@
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+// Initial seat states
+let seats = {
+  'A1': { status: 'available', lockExpire: null },
+  'A2': { status: 'available', lockExpire: null },
+  'A3': { status: 'available', lockExpire: null },
+  'A4': { status: 'available', lockExpire: null }
+};
+
+const LOCK_DURATION_MS = 60000; // 1 minute lock duration
+
+// Clean up expired locks before processing requests
+function cleanupExpiredLocks() {
+  const now = Date.now();
+  Object.keys(seats).forEach(seatId => {
+    if (seats[seatId].status === 'locked' && seats[seatId].lockExpire <= now) {
+      seats[seatId].status = 'available';
+      seats[seatId].lockExpire = null;
+    }
+  });
+}
+
+// View seats and their status
+app.get('/seats', (req, res) => {
+  cleanupExpiredLocks();
+  let output = {};
+  Object.keys(seats).forEach(seatId => {
+    output[seatId] = seats[seatId].status;
+  });
+  res.json(output);
+});
+
+// Lock a seat temporarily
+app.post('/seats/:id/lock', (req, res) => {
+  cleanupExpiredLocks();
+  const seatId = req.params.id;
+  if (!seats[seatId]) {
+    return res.status(404).json({ message: 'Seat not found' });
+  }
+  if (seats[seatId].status !== 'available') {
+    return res.status(400).json({ message: 'Seat not available for locking' });
+  }
+  seats[seatId].status = 'locked';
+  seats[seatId].lockExpire = Date.now() + LOCK_DURATION_MS;
+  res.json({ message: `Seat ${seatId} locked successfully. Confirm within 1 minute.` });
+});
+
+// Confirm and book a locked seat
+app.post('/seats/:id/confirm', (req, res) => {
+  cleanupExpiredLocks();
+  const seatId = req.params.id;
+  if (!seats[seatId]) {
+    return res.status(404).json({ message: 'Seat not found' });
+  }
+  if (seats[seatId].status !== 'locked') {
+    return res.status(400).json({ message: `Seat ${seatId} is not locked and cannot be booked.` });
+  }
+  seats[seatId].status = 'booked';
+  seats[seatId].lockExpire = null;
+  res.json({ message: `Seat ${seatId} booked successfully!` });
+});
+
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
